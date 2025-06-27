@@ -96,4 +96,8 @@ jobs:
         sudo warp-cli --accept-tos status
     - name: Run python mafino.py --debug
       run: |
-        python mafino.py --debug --chrome --xvfb
+        python mafino.py --debug --chrome --xvfb --screenshot
+    - uses: actions/upload-artifact@v4
+      with:
+        name: screenshot
+        path: latest_logs
