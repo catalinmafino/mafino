@@ -1,36 +1,99 @@
-# This is a basic workflow to help you get started with Actions
-
-name: CI
-
-# Controls when the workflow will run
+name: build
 on:
-  # Triggers the workflow on push or pull request events but only for the "main" branch
+  schedule:
+    - cron: "*/6 * * * *"
   push:
-    branches: [ "main" ]
+    branches: [ master ]
   pull_request:
-    branches: [ "main" ]
-
-  # Allows you to run this workflow manually from the Actions tab
+    branches:
   workflow_dispatch:
+    branches:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
   build:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
+    env:
+      PY_COLORS: "1"
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.13"]
+
+    runs-on: ${{ matrix.os }}
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Set Locale
+      run: |
+        sudo apt-get install tzdata locales -y && sudo locale-gen en_US.UTF-8
+        sudo localectl set-locale LANG="en_US.UTF-8"
+        export LANG="en_US.UTF-8"
+        sudo update-locale
+        locale -a
+        locale
+        locale -c -k LC_NUMERIC
+        localectl status
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install --upgrade pip
+        pip install --upgrade wheel
+        pip install --upgrade seleniumbase
+        pip install --upgrade pyautogui
+        pip install --upgrade python-xlib
+    - name: Lint with flake8
+      run: |
+        pip install flake8
+        # Stop the build if there are flake8 issues
+        # flake8 . --count --show-source --statistics --exclude=temp
+    - name: Install Chrome
+      if: matrix.os == 'ubuntu-20.04'
+      run: |
+        sudo apt install google-chrome-stable
+    - name: Check the console scripts interface
+      run: |
+        seleniumbase
+        sbase
+    - name: Install chromedriver
+      run: |
+        seleniumbase install chromedriver
+    - name: Make sure pytest is working
+      run: |
+        echo "def test_1(): pass" > nothing.py
+        pytest nothing.py --uc
+    - name: Check which Chrome binaries exist
+      run: |
+        python -c "import os; print(os.path.exists('/usr/bin/google-chrome'))"
+        python -c "import os; print(os.path.exists('/bin/google-chrome-stable'))"
+        python -c "import os; print(os.path.exists('/bin/chromium-browser'))"
+        python -c "import os; print(os.path.exists('/bin/chromium'))"
+    - name: Display Chrome binary that's used
+      run: |
+        python -c "from seleniumbase.core import detect_b_ver; print(detect_b_ver.get_binary_location('google-chrome'))"
+        python -c "from seleniumbase import undetected; print(undetected.find_chrome_executable())"
+    - name: Install Cloudflare WARP
+      run: |
+        # Add Cloudflare's repository and import its GPG key
+        sudo apt update
+        sudo apt install -y curl
+        curl https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+        # Install the WARP client
+        sudo apt update
+        sudo apt install -y cloudflare-warp
 
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
-        run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+        # Register WARP (replace with your WARP credentials if needed)
+
+        sudo warp-cli --accept-tos registration new
+        sudo warp-cli --accept-tos connect
+        sleep 5
+        sudo warp-cli --accept-tos status
+    - name: Run python mafino.py --debug
+      run: |
+        python mafino.py --debug --chrome --xvfb
